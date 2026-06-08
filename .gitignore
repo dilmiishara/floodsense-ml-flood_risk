@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+env/
+.venv/
+
+# Model files (too large for GitHub)
+*.h5
+*.keras
+*.pkl
+*.joblib
+
+# Jupyter Notebooks (not needed here)
+.ipynb_checkpoints/
+*.ipynb
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Test files
+*.csv
+*.xlsx
