@@ -3,7 +3,7 @@ uvicorn==0.29.0
 numpy==1.26.4
 joblib==1.4.2
 scikit-learn==1.4.2
-tensorflow==2.20.0
+tensorflow-cpu==2.16.1
 keras==3.13.2
 xgboost==3.2.0
 pandas==2.2.2
