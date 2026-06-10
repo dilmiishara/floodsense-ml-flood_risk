@@ -174,20 +174,24 @@ def startup():
     xgb_model   = joblib.load('models/water_level_xgb_model.joblib')
     print("All models loaded!")
 
-    # Create connection pool
-    db_pool = psycopg2_pool.SimpleConnectionPool(
-        minconn  = 1,
-        maxconn  = 5,
-        host     = os.getenv("DB_HOST",     "aws-1-ap-south-1.pooler.supabase.com"),
-        port     = int(os.getenv("DB_PORT", "6543")),
-        database = os.getenv("DB_NAME",     "postgres"),
-        user     = os.getenv("DB_USER",     "postgres.jxwytxoedkdrcelrvixf"),
-        password = os.getenv("DB_PASSWORD", "Znd@l78P2021"),
-        sslmode  = "require"
-    )
-    print("✅ Database connection pool created!")
-    print("✅ FloodSense ML API Ready!")
+    # Safe DB connection - won't crash app if DB fails
+    try:
+        db_pool = psycopg2_pool.SimpleConnectionPool(
+            minconn  = 1,
+            maxconn  = 5,
+            host     = os.getenv("DB_HOST",     "aws-1-ap-south-1.pooler.supabase.com"),
+            port     = int(os.getenv("DB_PORT", "6543")),
+            database = os.getenv("DB_NAME",     "postgres"),
+            user     = os.getenv("DB_USER",     "postgres.jxwytxoedkdrcelrvixf"),
+            password = os.getenv("DB_PASSWORD", "Znd@l78P2021"),
+            sslmode  = "require"
+        )
+        print("✅ Database connection pool created!")
+    except Exception as e:
+        print(f"⚠️ Database connection failed: {e} - continuing without DB")
+        db_pool = None
 
+    print("✅ FloodSense ML API Ready!")
 
 @app.on_event("shutdown")
 def shutdown():
