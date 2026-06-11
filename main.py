@@ -451,6 +451,70 @@ def root():
 def health():
     return {"status": "ok"}
 
+# ── Station thresholds by name ─────────────────────────────
+STATION_THRESHOLDS = {
+    'Ellagawa':   {'alert': 10.00, 'minor': 10.70, 'major': 12.20},
+    'Putupaula':  {'alert':  3.00, 'minor':  4.00, 'major':  5.00},
+    'Rathnapura': {'alert':  5.20, 'minor':  7.50, 'major':  9.50},
+}
+
+# ── Helper: get flood duration from DB ────────────────────
+def get_flood_duration_days(station: str, current_risk: str) -> float:
+    """
+    How many consecutive days has this station been
+    at alert level or above, based on water_level history.
+    """
+    if current_risk == 'Normal':
+        return 0.0
+
+    if db_pool is None:
+        return 0.5
+
+    min_wl = STATION_THRESHOLDS[station]['alert']
+
+    conn = None
+    try:
+        conn   = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        query = """
+            SELECT recorded_at, water_level
+            FROM water_level_logs
+            WHERE station_name = %s
+              AND recorded_at >= NOW() - INTERVAL '10 days'
+              AND water_level IS NOT NULL
+            ORDER BY recorded_at DESC
+        """
+        cursor.execute(query, (station,))
+        rows = cursor.fetchall()
+        cursor.close()
+
+        if not rows:
+            return 0.5
+
+        consecutive_count = 0
+        for row in rows:
+            wl = float(row['water_level'])
+            if wl >= min_wl:
+                consecutive_count += 1
+            else:
+                break
+
+        if consecutive_count == 0:
+            return 0.5
+
+        oldest        = rows[consecutive_count - 1]['recorded_at']
+        newest        = rows[0]['recorded_at']
+        duration_days = (newest - oldest).total_seconds() / 86400.0
+        return round(max(duration_days, 0.5), 2)
+
+    except Exception as e:
+        print(f"Duration check error for {station}: {e}")
+        return 0.5
+    finally:
+        if conn:
+            release_db_connection(conn)
+
 
 # Endpoint 1 — Flood Risk (LSTM)
 @app.post("/predict/flood-risk", response_model=FloodRiskResponse)
