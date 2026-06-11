@@ -64,102 +64,19 @@ XGB_FEATURES = [
     'humidity_lag_1d', 'temperature_lag_1d'
 ]
 
-# ── Affected Area Lookup Table ─────────────────────────────
-def get_duration_factor(days: float) -> float:
-    if days < 1:
-        return 1.0
-    elif days < 2:
-        return 1.2
-    elif days < 3:
-        return 1.4
-    elif days < 5:
-        return 1.6
-    else:
-        return 1.8
-
-AFFECTED_AREA_LOOKUP = {
-    (0, 0, 0): 0.0,
-    (1, 0, 0): 1.0,
-    (0, 1, 0): 1.0,
-    (0, 0, 1): 1.5,
-    (1, 1, 0): 2.0,
-    (1, 0, 1): 2.5,
-    (0, 1, 1): 2.5,
-    (1, 1, 1): 3.0,
-    (2, 0, 0): 2.0,
-    (0, 2, 0): 2.0,
-    (0, 0, 2): 3.0,
-    (2, 1, 0): 3.0,
-    (2, 0, 1): 3.5,
-    (0, 2, 1): 3.5,
-    (1, 2, 0): 3.0,
-    (0, 1, 2): 4.0,
-    (1, 0, 2): 4.0,
-    (2, 2, 0): 4.0,
-    (2, 0, 2): 4.8,
-    (0, 2, 2): 4.8,
-    (2, 2, 2): 5.5,
-    (3, 0, 0): 3.0,
-    (0, 3, 0): 3.0,
-    (0, 0, 3): 5.0,
-    (3, 1, 0): 4.0,
-    (3, 0, 1): 4.5,
-    (0, 3, 1): 4.5,
-    (1, 3, 0): 4.0,
-    (0, 1, 3): 6.0,
-    (1, 0, 3): 6.0,
-    (3, 2, 0): 5.0,
-    (3, 0, 2): 6.0,
-    (0, 3, 2): 6.0,
-    (2, 3, 0): 5.0,
-    (0, 2, 3): 7.0,
-    (2, 0, 3): 7.0,
-    (3, 3, 0): 6.0,
-    (3, 0, 3): 8.0,
-    (0, 3, 3): 8.0,
-    (3, 3, 2): 9.0,
-    (3, 2, 3): 11.0,
-    (2, 3, 3): 11.0,
-    (3, 3, 1): 7.0,
-    (3, 1, 3): 10.0,
-    (1, 3, 3): 10.0,
-    (3, 2, 2): 7.4,
-    (2, 3, 2): 7.4,
-    (2, 2, 3): 9.0,
-    (3, 3, 3): 14.9,
-    (3, 2, 1): 6.0,
-    (3, 1, 2): 7.0,
-    (2, 3, 1): 6.0,
-    (1, 3, 2): 7.0,
-    (2, 1, 3): 8.0,
-    (1, 2, 3): 8.0,
-    (2, 2, 1): 4.5,
-    (2, 1, 2): 5.0,
-    (1, 2, 2): 5.0,
-    (1, 1, 2): 4.0,
-    (1, 2, 1): 3.5,
-    (2, 1, 1): 3.5,
-    (1, 1, 3): 7.0,
-    (1, 3, 1): 5.0,
-    (3, 1, 1): 5.0,
+# ── Station thresholds by name (used by pipeline.py too) ──
+STATION_THRESHOLDS = {
+    'Ellagawa':   {'alert': 10.00, 'minor': 10.70, 'major': 12.20},
+    'Putupaula':  {'alert':  3.00, 'minor':  4.00, 'major':  5.00},
+    'Rathnapura': {'alert':  5.20, 'minor':  7.50, 'major':  9.50},
 }
 
-def get_severity_label(area: float) -> str:
-    if area == 0:
-        return "Normal"
-    elif area < 3.0:
-        return "Alert"
-    elif area < 7.4:
-        return "Minor Flood"
-    else:
-        return "Major Flood"
-
-# ── Models (loaded at startup) ─────────────────────────────
+# ── Models ─────────────────────────────────────────────────
 lstm_model  = None
 lstm_scaler = None
 xgb_model   = None
 
-# ── Connection pool (created at startup) ──────────────────
+# ── Connection pool ────────────────────────────────────────
 db_pool = None
 
 # ── Startup & Shutdown ─────────────────────────────────────
@@ -167,14 +84,12 @@ db_pool = None
 def startup():
     global db_pool, lstm_model, lstm_scaler, xgb_model
 
-    # Load models
     print("Loading models...")
     lstm_model  = tf.keras.models.load_model('models/flood_risk_model.h5')
     lstm_scaler = joblib.load('models/floodsense_lstm_scaler.pkl')
     xgb_model   = joblib.load('models/water_level_xgb_model.joblib')
     print("All models loaded!")
 
-    # Safe DB connection - won't crash app if DB fails
     try:
         db_pool = psycopg2_pool.SimpleConnectionPool(
             minconn  = 1,
@@ -186,19 +101,19 @@ def startup():
             password = os.getenv("DB_PASSWORD", "Znd@l78P2021"),
             sslmode  = "require"
         )
-        print("✅ Database connection pool created!")
+        print("Database connection pool created!")
     except Exception as e:
-        print(f"⚠️ Database connection failed: {e} - continuing without DB")
+        print(f"Database connection failed: {e} - continuing without DB")
         db_pool = None
 
-    print("✅ FloodSense ML API Ready!")
+    print("FloodSense ML API Ready!")
+
 
 @app.on_event("shutdown")
 def shutdown():
     global db_pool
     if db_pool:
         db_pool.closeall()
-        print("✅ Database connection pool closed!")
 
 
 # ── Database helpers ───────────────────────────────────────
@@ -209,7 +124,7 @@ def release_db_connection(conn):
     db_pool.putconn(conn)
 
 
-# ── Fetch all past data in ONE db call ─────────────────────
+# ── Fetch past water level + weather data ─────────────────
 def fetch_past_data(station: str, forecast_date: date) -> tuple:
     date_from_14 = forecast_date - timedelta(days=14)
     date_from_2  = forecast_date - timedelta(days=2)
@@ -286,81 +201,62 @@ def build_xgb_features(
     sid         = station_map_xgb[station]
     forecast_ts = pd.Timestamp(forecast_date)
 
-    # Step 1 & 2: Fetch all past data in one DB call
     wl_df, weather_df = fetch_past_data(station, forecast_date)
 
-    # Step 3: Append current day to water level history
     current_row = pd.DataFrame([{
         'date'       : forecast_ts,
         'water_level': np.nan,
         'rainfall'   : float(rainfall)
     }])
 
-    if not wl_df.empty:
-        history = pd.concat([wl_df, current_row], ignore_index=True)
-    else:
-        history = current_row.copy()
-
+    history = pd.concat([wl_df, current_row], ignore_index=True) if not wl_df.empty else current_row.copy()
     history['date']        = pd.to_datetime(history['date'])
     history['rainfall']    = pd.to_numeric(history['rainfall'],    errors='coerce')
     history['water_level'] = pd.to_numeric(history['water_level'], errors='coerce')
     history = history.sort_values('date').reset_index(drop=True)
 
-    # Step 4: Rainfall lag
     def get_rainfall_lag(days: int) -> float:
         target = forecast_ts - pd.Timedelta(days=days)
         mask   = history['date'] == target
         if mask.any():
             val = history.loc[mask, 'rainfall'].values[0]
-            if pd.notna(val):
-                return float(val)
+            if pd.notna(val): return float(val)
         return float(rainfall)
 
-    # Step 5: Water level lag
     def get_wl_lag(days: int) -> float:
         target = forecast_ts - pd.Timedelta(days=days)
         mask   = history['date'] == target
         if mask.any():
             val = history.loc[mask, 'water_level'].values[0]
-            if pd.notna(val):
-                return float(val)
+            if pd.notna(val): return float(val)
         return 0.0
 
-    # Step 6: Rolling rainfall
     def get_rolling(window: int, func: str) -> float:
         mask = (
             (history['date'] < forecast_ts) &
             (history['date'] >= forecast_ts - pd.Timedelta(days=window))
         )
         past = history.loc[mask, 'rainfall'].dropna()
-        if past.empty:
-            return float(rainfall)
+        if past.empty: return float(rainfall)
         if func == 'mean': return float(past.mean())
         if func == 'sum':  return float(past.sum())
         if func == 'max':  return float(past.max())
         return float(rainfall)
 
-    # Step 7: Weather lag
     def get_weather_lag(col: str, fallback: float) -> float:
-        if weather_df.empty:
-            return float(fallback)
+        if weather_df.empty: return float(fallback)
         wdf         = weather_df.copy()
         wdf['date'] = pd.to_datetime(wdf['date'])
         target      = forecast_ts - pd.Timedelta(days=1)
         mask        = wdf['date'] == target
         if mask.any():
             val = wdf.loc[mask, col].values[0]
-            if pd.notna(val):
-                return float(val)
+            if pd.notna(val): return float(val)
         return float(fallback)
 
-    # Step 8: Rainfall rate of change
-    r_lag1  = get_rainfall_lag(1)
-    r_lag2  = get_rainfall_lag(2)
-    r_diff1 = float(rainfall) - r_lag1
-    r_diff2 = float(rainfall) - r_lag2
+    r_lag1 = get_rainfall_lag(1)
+    r_lag2 = get_rainfall_lag(2)
 
-    # Step 9: Assemble feature row
     row = {
         'station_code'          : int(sid),
         'rainfall'              : float(rainfall),
@@ -381,8 +277,8 @@ def build_xgb_features(
         'rainfall_roll_max_5d'  : get_rolling(5,  'max'),
         'rainfall_roll_max_7d'  : get_rolling(7,  'max'),
         'rainfall_roll_max_14d' : get_rolling(14, 'max'),
-        'rainfall_diff_1d'      : r_diff1,
-        'rainfall_diff_2d'      : r_diff2,
+        'rainfall_diff_1d'      : float(rainfall) - r_lag1,
+        'rainfall_diff_2d'      : float(rainfall) - r_lag2,
         'water_level_lag_1d'    : get_wl_lag(1),
         'water_level_lag_2d'    : get_wl_lag(2),
         'water_level_lag_3d'    : get_wl_lag(3),
@@ -397,7 +293,7 @@ def build_xgb_features(
     return pd.DataFrame([row])[XGB_FEATURES]
 
 
-# ── Helper functions ───────────────────────────────────────
+# ── Normalize water level against thresholds ──────────────
 def normalize_wl(station_id: int, wl: float) -> float:
     t = thresholds[station_id]
     if wl >= t['major']:
@@ -410,82 +306,26 @@ def normalize_wl(station_id: int, wl: float) -> float:
         return wl / t['alert']
 
 
-# ── Request / Response schemas ─────────────────────────────
-
-# Flood Risk schemas
-class FloodRiskRequest(BaseModel):
-    station:     Literal['Ellagawa', 'Putupaula', 'Rathnapura']
-    water_level: float
-    rainfall:    float
-    humidity:    float
-    temperature: float
-
-class FloodRiskResponse(BaseModel):
-    station:     str
-    risk_level:  str
-    risk_code:   int
-    confidence:  dict
-    water_level: float
-    threshold:   dict
-
-# Water Level schemas
-class WaterLevelRequest(BaseModel):
-    station:       Literal['Ellagawa', 'Putupaula', 'Rathnapura']
-    rainfall:      float
-    humidity:      float
-    temperature:   float
-    forecast_date: date
-
-class WaterLevelResponse(BaseModel):
-    station:       str
-    forecast_date: str
-    predicted_wl:  float
-
-
-# ── Endpoints ──────────────────────────────────────────────
-@app.get("/")
-def root():
-    return {"message": "FloodSense ML API is running"}
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-# ── Station thresholds by name ─────────────────────────────
-STATION_THRESHOLDS = {
-    'Ellagawa':   {'alert': 10.00, 'minor': 10.70, 'major': 12.20},
-    'Putupaula':  {'alert':  3.00, 'minor':  4.00, 'major':  5.00},
-    'Rathnapura': {'alert':  5.20, 'minor':  7.50, 'major':  9.50},
-}
-
-# ── Helper: get flood duration from DB ────────────────────
+# ── Get flood duration from DB ─────────────────────────────
 def get_flood_duration_days(station: str, current_risk: str) -> float:
-    """
-    How many consecutive days has this station been
-    at alert level or above, based on water_level history.
-    """
     if current_risk == 'Normal':
         return 0.0
-
     if db_pool is None:
         return 0.5
 
     min_wl = STATION_THRESHOLDS[station]['alert']
-
-    conn = None
+    conn   = None
     try:
         conn   = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        query = """
+        cursor.execute("""
             SELECT recorded_at, water_level
             FROM water_level_logs
             WHERE station_name = %s
               AND recorded_at >= NOW() - INTERVAL '10 days'
               AND water_level IS NOT NULL
             ORDER BY recorded_at DESC
-        """
-        cursor.execute(query, (station,))
+        """, (station,))
         rows = cursor.fetchall()
         cursor.close()
 
@@ -494,8 +334,7 @@ def get_flood_duration_days(station: str, current_risk: str) -> float:
 
         consecutive_count = 0
         for row in rows:
-            wl = float(row['water_level'])
-            if wl >= min_wl:
+            if float(row['water_level']) >= min_wl:
                 consecutive_count += 1
             else:
                 break
@@ -516,7 +355,48 @@ def get_flood_duration_days(station: str, current_risk: str) -> float:
             release_db_connection(conn)
 
 
-# Endpoint 1 — Flood Risk (LSTM)
+# ── Request / Response schemas ─────────────────────────────
+
+class FloodRiskRequest(BaseModel):
+    station:     Literal['Ellagawa', 'Putupaula', 'Rathnapura']
+    water_level: float
+    rainfall:    float
+    humidity:    float
+    temperature: float
+
+class FloodRiskResponse(BaseModel):
+    station:     str
+    risk_level:  str
+    risk_code:   int
+    confidence:  dict
+    water_level: float
+    threshold:   dict
+
+class WaterLevelRequest(BaseModel):
+    station:       Literal['Ellagawa', 'Putupaula', 'Rathnapura']
+    rainfall:      float
+    humidity:      float
+    temperature:   float
+    forecast_date: date
+
+class WaterLevelResponse(BaseModel):
+    station:       str
+    forecast_date: str
+    predicted_wl:  float
+
+
+# ── Endpoints ──────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return {"message": "FloodSense ML API is running"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# Endpoint 1 — Flood Risk Classification (LSTM)
 @app.post("/predict/flood-risk", response_model=FloodRiskResponse)
 def predict_flood_risk(req: FloodRiskRequest):
     try:
@@ -574,7 +454,29 @@ def predict_water_level(req: WaterLevelRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Test endpoint (remove before final deployment) ─────────
+# Endpoint 3 — Pipeline trigger (called by Cloud Scheduler)
+@app.post("/pipeline/run")
+def trigger_pipeline():
+    try:
+        from pipeline import run_pipeline
+        results = run_pipeline()
+        return {
+            "status":  "success",
+            "message": f"Saved {len(results)} predictions",
+            "results": [
+                {
+                    "station":       r["station_name"],
+                    "risk_level":    r["flood_risk_level"],
+                    "affected_area": r["affected_area_sqkm"]
+                }
+                for r in results
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Endpoint 4 — Test DB connection
 @app.get("/test-db")
 def test_db():
     conn = None
